@@ -159,6 +159,13 @@ class AdminWindow:
 
         self.tree = ttk.Treeview(frame_list, columns=("id", "login", "role", "blocked", "attempts"),
                                   show="headings")
+        
+        self.tree.column("id", width=50, anchor="center")
+        self.tree.column("login", width=150)
+        self.tree.column("role", width=100)
+        self.tree.column("blocked", width=100, anchor="center")
+        self.tree.column("attempts", width=80, anchor="center")
+        
         self.tree.heading("id", text="ID")
         self.tree.heading("login", text="Логин")
         self.tree.heading("role", text="Роль")
@@ -218,33 +225,46 @@ class AddEditUser:
             self.window.title("Молочный комбинат - Добавление пользователя")
         else:
             self.window.title("Молочный комбинат - Редактирование пользователя")
-        self.window.geometry("300x250")
+        self.window.geometry("350x350")
         self.window.grab_set()
 
         tk.Label(self.window, text="Логин:").pack(pady=(10,0))
         self.entry_login = tk.Entry(self.window)
         self.entry_login.pack()
-
+        
         tk.Label(self.window, text="Пароль:").pack(pady=(5,0))
         self.entry_password = tk.Entry(self.window, show="*")
         self.entry_password.pack()
-
+        
         tk.Label(self.window, text="Роль:").pack(pady=(5,0))
         self.role_var = tk.StringVar(value="user")
         role_menu = ttk.Combobox(self.window, textvariable=self.role_var,
                                  values=["user", "admin"], state="readonly")
         role_menu.pack()
-
+        
+        self.blocked_var = tk.BooleanVar(value=False)
+        self.blocked_check = tk.Checkbutton(self.window, text="Заблокирован", 
+                                           variable=self.blocked_var)
+        self.blocked_check.pack(pady=(10,0))
+        
         if user_id:
             conn = db_utils.get_connection()
             cur = conn.cursor()
-            cur.execute("SELECT login, role FROM users WHERE id = %s", (user_id,))
-            login, role = cur.fetchone()
+            cur.execute("SELECT login, role, is_blocked FROM users WHERE id = %s", (user_id,))
+            login, role, is_blocked = cur.fetchone()
             self.entry_login.insert(0, login)
             self.role_var.set(role)
+            self.blocked_var.set(is_blocked)
             self.entry_login.config(state='disabled')
             conn.close()
-
+            
+            if login == self.refresh_callback.__self__.current_user:
+                self.role_menu = role_menu
+                self.role_menu.config(state='disabled')
+                self.blocked_check.config(state='disabled')
+                tk.Label(self.window, text="(Нельзя изменить свои данные)", 
+                        fg="red").pack()
+        
         btn_frame = tk.Frame(self.window)
         btn_frame.pack(pady=20)
         tk.Button(btn_frame, text="Сохранить", command=self.save).pack(side=tk.LEFT, padx=5)
@@ -254,22 +274,35 @@ class AddEditUser:
         login = self.entry_login.get().strip()
         password = self.entry_password.get().strip()
         role = self.role_var.get()
+        is_blocked = self.blocked_var.get()
 
         if not login or not password:
             messagebox.showerror("Ошибка", "Логин и пароль обязательны")
             return
 
-        if self.user_id is None:
-            success = db_utils.add_user(login, password, role)
-            if not success:
-                messagebox.showerror("Ошибка", "Пользователь с таким логином уже существует")
-                return
-        else:
-            db_utils.update_user(self.user_id, password, role)
-
-        messagebox.showinfo("Успех", "Пользователь сохранён")
-        self.refresh_callback()
-        self.window.destroy()
+        conn = None
+        try:
+            if self.user_id is None:
+                success = db_utils.add_user(login, password, role)
+                if not success:
+                    messagebox.showerror("Ошибка", "Пользователь с таким логином уже существует")
+                    return
+            else:
+                conn = db_utils.get_connection()
+                cur = conn.cursor()
+                cur.execute("UPDATE users SET password = %s, role = %s, is_blocked = %s WHERE id = %s",
+                           (password, role, is_blocked, self.user_id))
+                conn.commit()
+                conn.close()
+                
+            messagebox.showinfo("Успех", "Пользователь сохранён")
+            self.refresh_callback()
+            self.window.destroy()
+            
+        except Exception as e:
+            messagebox.showerror("Ошибка БД", str(e))
+            if conn:
+                conn.close()
 
 # Окно обычного пользователя
 class UserWindow:

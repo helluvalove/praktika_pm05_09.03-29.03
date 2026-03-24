@@ -71,3 +71,9 @@ def update_user(user_id, password, role):
     cur.execute("UPDATE users SET password = %s, role = %s WHERE id = %s", (password, role, user_id))
     conn.commit()
     conn.close()
+
+def unblock_user(user_id, conn):
+    """Разблокирует пользователя и сбрасывает счётчик попыток"""
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET is_blocked = false, failed_attempts = 0 WHERE id = %s", (user_id,))
+    conn.commit()
